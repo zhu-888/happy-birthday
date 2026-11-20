@@ -375,6 +375,24 @@ function drawFlame(img, glow, x, y, ph, grow) {
   tdraw(img, x - d * Math.sin(rad), y - d * Math.cos(rad), 1, grow * (2 - fl), grow * fl, ang);
 }
 
+function drawCandleFlame(grow) {
+  // 蛋糕上的火苗：整张图先忽长忽短地拉伸，再切成一条条横条，越靠上的横条左右摆得越多，还有一道波从下往上传，
+  // 看起来就是软的、会扭动的火，不是一张硬片在摇
+  if (grow <= 0.01) return;
+  const s = SP[D.flame], fl = 1 + 0.07 * Math.sin(t * 9.7) + 0.04 * Math.sin(t * 21.3 + 1.0);
+  const w = s[3] * grow * (2 - fl), h = s[4] * grow * fl, lean = 3.2 * Math.sin(t * 2.3 + 0.7) + 1.6 * Math.sin(t * 5.9);
+  if (grow > 0.5) glowAt(D.flameGlow, D.fx, D.fy - h * 0.26, 1);
+  setAdd(0); setA(1);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);  // 直接按画布像素画，横条的上下边落在整数行上，条与条之间才没有缝
+  const n = D.flameStrips, left = (D.fx - w / 2) * K, topPx = Math.round((D.fy + D.flameDrop * cu - h) * K), rows = Math.max(n, Math.round(h * K));
+  for (let i = 0; i < n; i++) {
+    const ya = Math.floor(rows * i / n), yb = Math.floor(rows * (i + 1) / n), v = 1 - (i + 0.5) / n;  // v：这一条有多高，0 在烛芯，1 在火尖
+    const off = (lean * v ** 1.7 + 1.3 * Math.sin(t * 8.5 - v * 5.5) * v) * cu * grow * K;
+    ctx.drawImage(IM[s[0]], s[1], s[2] + s[4] * ya / rows, s[3], s[4] * (yb - ya) / rows, left + off, topPx + ya, w * K, yb - ya);
+  }
+  base();
+}
+
 function drawHosts() {
   const a = t - T.host, gone = clamp01((a - T.hostStay + 0.7) / 0.5), fade = clamp01(a / 0.8) * (1 - gone);
   mid(D.hostGlow, W / 2, D.hostGlowY, fade);
@@ -508,7 +526,7 @@ function drawCake() {
 
   if (t > T.flame) {
     if (t < T.flame + 0.3) glowAt(D.flameGlow, D.fx, D.fy, 1);  // 点着的一瞬间多闪一下
-    drawFlame(D.flame, D.flameGlow, D.fx, D.fy, 0.7, outBack(clamp01((t - T.flame) / 0.4)));
+    drawCandleFlame(outBack(clamp01((t - T.flame) / 0.4)));
   } else if (t > T.flame - T.match) {
     const [mx, my] = matchPos();
     glowAt(D.matchGlow, mx, my, 1);
