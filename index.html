@@ -12,9 +12,14 @@
   body { font-family: -apple-system, "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif; color: #f6ecf4; }
   #wrap { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); }
   #stage { display: block; width: 100%; height: 100%; }
-  #bar { position: absolute; left: 33%; bottom: 1.6%; display: none; gap: 8px; opacity: 0.75; }
+  /* 屏幕比舞台宽、左右留了空的时候，把舞台左右两边淡出到底色，星河就不会被齐刷刷切一刀 */
+  #wrap.side::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+                      background: linear-gradient(90deg, #111116 0, rgba(17, 17, 22, 0) 1.4%, rgba(17, 17, 22, 0) 98.6%, #111116 100%); }
+  #bar { position: absolute; z-index: 1; left: 33%; bottom: 1.6%; display: none; gap: 8px; opacity: 0.75; }
   #bar button { padding: 5px 12px; font: inherit; font-size: 13px; color: #e8dff0; background: rgba(255, 255, 255, 0.1);
                 border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 999px; cursor: pointer; }
+  #wrap.tall #bar { left: auto; bottom: auto; right: 2.2%; top: 0.5%; gap: 6px; }  /* 竖屏：下面站满了朋友，按钮挪到右上角 */
+  #wrap.tall #bar button { padding: 3px 10px; font-size: 12px; }
   #start { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
            gap: 22px; text-align: center; padding: 24px;
            background: radial-gradient(ellipse at 50% 42%, #3a2152 0%, #1a1326 55%, #111116 100%); }
@@ -23,7 +28,6 @@
         background: linear-gradient(135deg, #ff7eb0, #ff9d5c); box-shadow: 0 8px 26px rgba(255, 110, 160, 0.4); }
   #go:disabled { color: rgba(255, 255, 255, 0.75); background: rgba(255, 255, 255, 0.14); box-shadow: none; cursor: default; }
   #start p { margin: 0; font-size: 14px; color: rgba(246, 236, 244, 0.62); line-height: 1.7; }
-  #turn { display: none; color: #ffc7dc; }
 </style>
 </head>
 <body>
@@ -34,9 +38,8 @@
 <div id="start">
   <h1>有一份生日惊喜</h1>
   <button id="go" disabled>加载中 0%</button>
-  <p>建议打开声音观看<span id="turn"><br>请把手机横过来</span></p>
+  <p>建议打开声音观看<br>手机横着、竖着都可以看</p>
 </div>
-<script src="data.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

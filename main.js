@@ -1,12 +1,18 @@
 // 生日动画的网页版：图片和数据由 tools/export_web.py 从桌面版导出，这里用 Canvas 把同样的动画重放一遍。
 (() => {
 "use strict";
-const D = window.DATA, W = D.W, H = D.H, u = D.u, cu = D.cu, T = D.T, TILT = D.tilt, TAU = Math.PI * 2;
-const SP = D.sprites, IM = [], SETS = D.sets;  // SP 每项：[文件, x, y, 宽, 高, 是否加色, 中档透明度, 暗档透明度, 放大倍数]
+const TAU = Math.PI * 2;
+// 排版有两套：横屏（wide）和竖屏（tall），各有自己的数据和图片。下面这些是当前用的那一套，由 use() 换上。
+let D, W, H, u, cu, T, TILT, SP, IM, SETS, BG, GOLD, SK, NPTS, CODE_LH;  // SP 每项：[文件, x, y, 宽, 高, 是否加色, 中档透明度, 暗档透明度, 放大倍数]
 const $ = id => document.getElementById(id);
 const wrap = $("wrap"), canvas = $("stage"), ctx = canvas.getContext("2d", { alpha: false });
 const query = new URLSearchParams(location.search);
-const BG = `rgb(${D.bg})`, GOLD = `rgb(${D.gold})`;
+function use(pack) {
+  D = pack.data; IM = pack.images;
+  W = D.W; H = D.H; u = D.u; cu = D.cu; T = D.T; TILT = D.tilt; SP = D.sprites; SETS = D.sets;
+  BG = `rgb(${D.bg})`; GOLD = `rgb(${D.gold})`;
+  SK = D.sketch; NPTS = SK.pts.length / 2; CODE_LH = Math.floor(21 * u);
+}
 
 // ---------- 小工具 ----------
 const clamp01 = x => x < 0 ? 0 : x > 1 ? 1 : x;
@@ -74,7 +80,6 @@ function pick(stars, dots, sizes, warm = false, dabs = 0) {  // 按比例随机�
 
 // ---------- 预先画好的几层 ----------
 let skyC, codeC, skC, skG, textStill = null;
-const SK = D.sketch, NPTS = SK.pts.length / 2, CODE_LH = Math.floor(21 * u);
 
 function buildLayers() {
   let g;
@@ -95,7 +100,7 @@ function buildLayers() {
     g.fill();
   });
   // 背景里滚动的代码：带语法配色，右侧渐隐
-  [codeC, g] = layer(W * 0.5, CODE_LH * D.code.length);
+  [codeC, g] = layer(D.codeW, CODE_LH * D.code.length);
   g.font = `${13 * u}px Menlo, Monaco, Consolas, "Courier New", monospace`;
   g.textBaseline = "middle";
   D.code.forEach((line, i) => {
@@ -106,10 +111,10 @@ function buildLayers() {
       x += g.measureText(text).width;
     }
   });
-  const fade = g.createLinearGradient(0, 0, W * 0.5, 0);
+  const fade = g.createLinearGradient(0, 0, D.codeW, 0);
   fade.addColorStop(0, "rgba(0,0,0,0.8)"); fade.addColorStop(0.71, "rgba(0,0,0,0.8)"); fade.addColorStop(1, "rgba(0,0,0,0)");
   g.globalCompositeOperation = "destination-in";
-  g.fillStyle = fade; g.fillRect(0, 0, W * 0.5, CODE_LH * D.code.length);
+  g.fillStyle = fade; g.fillRect(0, 0, D.codeW, CODE_LH * D.code.length);
   // 线稿和拼好的字跟着重画
   [skC, skG] = layer(SK.size[0], SK.size[1]);
   skG.fillStyle = GOLD;
@@ -118,7 +123,7 @@ function buildLayers() {
 
 // ---------- 状态 ----------
 let t = 0, sparks = [], tp = [], fw = [], rockets = [], pops = [], flashes = [];
-let stage = -1, nextRocket = 0, letterOpen = null, letterShut = null, envSince = T.letter, skDone = 0;
+let stage = -1, nextRocket = 0, letterOpen = null, letterShut = null, envSince = 0, skDone = 0;
 
 function reset() {
   t = 0; sparks = []; tp = []; fw = []; rockets = []; pops = []; flashes = [];
@@ -157,8 +162,8 @@ function update(dt) {
   const t0 = t;
   t += dt;
   const crossed = at => t0 < at && at <= t;
-  for (let i = 0; i < 3; i++) if (crossed(T.count + i * T.countStep)) burst(W / 2, H * 0.5, 30, 460 * u);
-  D.hosts.forEach(([, x], i) => { if (crossed(T.host + 0.76 + 0.3 * i)) burst(x, H * 0.84, 22, 380 * u); });
+  for (let i = 0; i < 3; i++) if (crossed(T.count + i * T.countStep)) burst(W / 2, D.countY - H * 0.04, 30, 460 * u);
+  D.hosts.forEach(([, x], i) => { if (crossed(T.host + 0.76 + 0.3 * i)) burst(x, D.hostFloor - H * 0.02, 22, 380 * u); });
   if (crossed(T.flame)) burst(D.fx, D.fy, 60, 400 * u);
   if (t > T.flame - T.match && t <= T.flame) {  // 飞向烛芯的火星一路掉火花
     const [x, y] = matchPos();
@@ -188,7 +193,7 @@ function update(dt) {
     nextRocket -= dt;
     if (nextRocket <= 0) {
       nextRocket = t < T.firework + 3 ? 0.5 : rnd(1.2, 2.4);
-      rockets.push([rnd(0.06, 0.94) * W, rnd(0.1, 0.5) * H, 0, irand(gold)]);
+      rockets.push([rnd(0.06, 0.94) * W, rnd(0.1, D.fwLow) * H, 0, irand(gold)]);
     }
   }
   for (const r of rockets) {
@@ -355,7 +360,7 @@ function drawBackdrop() {
   if (dim > 0) {
     const top = Math.round(t * 24 * u * K), rows = Math.min(canvas.height, codeC.height - top);
     setAdd(0); setA(dim);
-    if (rows > 0) ctx.drawImage(codeC, 0, top, codeC.width, rows, 16 * u, 0, W * 0.5, rows / K);
+    if (rows > 0) ctx.drawImage(codeC, 0, top, codeC.width, rows, 16 * u, 0, D.codeW, rows / K);
     for (const [x, y, spr, ph] of D.bgStars) blit(spr, x, y + Math.sin(t * 0.5 + ph) * 8 * u, dim);
   }
   for (const [x, y, i, v, ph] of D.dust) blit(D.dustImg[i], x + Math.sin(t * 0.3 + ph) * 12 * u, (y + v * t) % (H + 20) - 10);
@@ -372,13 +377,13 @@ function drawFlame(img, glow, x, y, ph, grow) {
 
 function drawHosts() {
   const a = t - T.host, gone = clamp01((a - T.hostStay + 0.7) / 0.5), fade = clamp01(a / 0.8) * (1 - gone);
-  mid(D.hostGlow, W / 2, H * 0.66, fade);
+  mid(D.hostGlow, W / 2, D.hostGlowY, fade);
   for (const [x, speed, start, spr, ph] of D.bits)  // 慢慢往上飘的小爱心和星星
     blit(spr, x + Math.sin(t * 1.2 + ph) * 14 * u, H * 1.08 - (start + a * speed / H) % 1 * H * 1.2, Math.min(fade, 215 / 255));
   // 彩旗从上面落下来，退场时收回去
   blit(D.bunting, 0, (outBack(clamp01(a / 0.7), 1.4) - 1) * 110 * u - gone * gone * 130 * u + Math.sin(t * 1.6) * 2 * u);
   const speaking = D.talk.find(line => a - line.start > 0 && a - line.start < line.span);
-  const floor = H * 0.86;
+  const floor = D.hostFloor;
   D.hosts.forEach(([spr, x], i) => {  // 小狮子从上面掉下来弹两下，然后左右摇晃；正在说话的那只一蹦一蹦
     const p = (a - 0.5 - 0.3 * i) / 0.7;
     if (p <= 0) return;
@@ -416,14 +421,14 @@ function drawHosts() {
 function drawCountdown() {
   const i = Math.floor((t - T.count) / T.countStep), a = t - T.count - i * T.countStep;
   const [spr, fx, fy] = D.digits[i], sc = outBack(clamp01(a / 0.3)), fade = clamp01((T.countStep - a) / 0.25);
-  const w = SP[spr][3] * sc, h = SP[spr][4] * sc, x = W / 2 - w / 2, y = H * 0.54 - h / 2 + Math.sin(t * 3) * 4 * u;
+  const w = SP[spr][3] * sc, h = SP[spr][4] * sc, x = W / 2 - w / 2, y = D.countY - h / 2 + Math.sin(t * 3) * 4 * u;
   blitS(spr, x, y, w, h, fade);
   drawFlame(D.countFlame, D.countGlow, x + fx * sc, y + fy * sc, i * 2.1, sc * fade);
   const slide = 1 - outBack(clamp01(a / 0.45), 1.2);
   D.hosts.forEach(([hs], j) => {  // 每个数字旁边跟着小狮子，从屏幕两侧滑进来
     if (j % 3 !== i) return;
     const hw = SP[hs][3] * 0.86, hh = SP[hs][4] * 0.86, side = j % 2 === 0 ? -1 : 1;
-    blitS(hs, W / 2 + side * (350 * u + slide * W * 0.4) - hw / 2, H * 0.79 - hh - Math.max(0, Math.sin(t * 5 + j)) ** 2 * 16 * u, hw, hh, fade);
+    blitS(hs, W / 2 + side * (D.countSide + slide * W * 0.4) - hw / 2, D.countFloor - hh - Math.max(0, Math.sin(t * 5 + j)) ** 2 * 16 * u, hw, hh, fade);
   });
 }
 
@@ -528,14 +533,14 @@ function drawFriends() {  // 朋友们一排一排（左右各两只）慢慢浮
   });
 }
 
-function drawEnvelope() {  // 蛋糕前面的小信封：蹦出来，轻轻浮动，隔一会儿晃一晃，底下一行小字提示可以点开
+function drawEnvelope() {  // 蛋糕前面的小信封：蹦出来，轻轻浮动，隔一会儿晃一晃，旁边一行小字提示可以点开
   const E = D.env, a = t - envSince, x = E.pos[0], y = E.pos[1] + Math.sin(t * 2.3) * 4 * u, wig = a % 3.4;
   glowAt(E.glow, x, y, clamp01(a / 0.6) * (0.65 + 0.35 * Math.sin(t * 3.1)));
   const sc = D.envSmall * (a < 0.5 ? outBack(clamp01(a / 0.5), 2.4) : 1);
   tdraw(E.whole, x, y, 1, sc, sc, -8 + (a >= 0.5 && wig < 0.6 ? Math.sin(wig * 21) * 7 * (0.6 - wig) / 0.6 : 0));
-  if (a > 0.7) {
-    const s = SP[E.whole], half = (s[3] * Math.sin(8 * Math.PI / 180) + s[4] * Math.cos(8 * Math.PI / 180)) * D.envSmall / 2;
-    blit(E.tip, x - SP[E.tip][3] / 2, y + half + (2 + Math.abs(Math.sin(t * 3.1)) * 5) * u, clamp01((a - 0.7) / 0.5));
+  if (a > 0.7) {  // 提示在横屏时摆在信封下面，竖屏时摆在右边，朝那个方向轻轻晃
+    const bob = Math.abs(Math.sin(t * 3.1)) * 5 * u;
+    blit(E.tip, x + E.tipOff[0] + E.tipDir[0] * bob, y + E.tipOff[1] + E.tipDir[1] * bob, clamp01((a - 0.7) / 0.5));
   }
 }
 
@@ -634,35 +639,85 @@ function stopMusic() {
   if (master) { master.disconnect(); master = null; }
 }
 
-// ---------- 页面：缩放、点击、开始和重播 ----------
-let rotated = false, cssW = 1, cssH = 1, running = false, last = 0;
+// ---------- 页面：横竖屏、缩放、点击、开始和重播 ----------
+let cur = null, cssW = 1, cssH = 1, running = false, last = 0, failed = false;
 const speed = parseFloat(query.get("speed")) || 1;
 const stats = { frames: 0, total: 0, worst: 0 };
+const PACKS = { wide: { src: "data.js" }, tall: { src: "data_tall.js" } };
+for (const name in PACKS) Object.assign(PACKS[name], { data: null, images: [], state: 0, progress: 0 });  // state：0 没加载，1 加载中，2 好了
+const wanted = () => query.get("pack") in PACKS ? query.get("pack") : innerHeight > innerWidth ? "tall" : "wide";  // 竖着拿用竖屏那套
 
-function fit() {  // 舞台按比例缩放到正好放进窗口；竖着拿手机时把舞台转 90°，横过来看就是满屏
-  const vw = innerWidth, vh = innerHeight;
-  rotated = vh > vw * 1.05;
-  const aw = rotated ? vh : vw, ah = rotated ? vw : vh;
-  cssW = Math.min(aw, ah * W / H); cssH = cssW * H / W;
+function load(name) {  // 先取这一套的数据，再取它用到的图片；全部到齐后调 fit() 换上
+  const pack = PACKS[name];
+  if (pack.state) return;
+  pack.state = 1;
+  const fail = () => { failed = true; showProgress(); };
+  const tag = document.createElement("script");
+  tag.src = pack.src;
+  tag.onerror = fail;
+  tag.onload = () => {
+    pack.data = window.PACKS_DATA[name];
+    let loaded = 0;
+    pack.data.files.forEach((src, i) => {
+      const img = new Image();
+      img.onerror = fail;
+      img.onload = () => {
+        pack.progress = ++loaded / pack.data.files.length;
+        if (loaded === pack.data.files.length) { pack.state = 2; fit(); }
+        showProgress();
+      };
+      img.src = src;
+      pack.images[i] = img;
+    });
+  };
+  document.head.appendChild(tag);
+}
+function showProgress() {
+  const pack = PACKS[wanted()], go = $("go");
+  go.disabled = failed || pack.state !== 2;
+  go.textContent = failed ? "加载失败，请刷新重试" : pack.state === 2 ? "点击开始" : `加载中 ${Math.round(pack.progress * 100)}%`;
+}
+
+function fit() {  // 按手机横着还是竖着选一套排版，再把舞台按比例缩放到正好放进窗口
+  const name = wanted();
+  load(name);
+  showProgress();
+  let changed = false;
+  if (PACKS[name].state === 2 && cur !== name) {  // 要用的那套到齐了：换上。没到齐之前先接着用原来那套
+    cur = name; changed = true;
+    use(PACKS[name]);
+    wrap.classList.toggle("tall", name === "tall");
+  }
+  if (!cur) return;
+  cssW = Math.min(innerWidth, innerHeight * W / H); cssH = cssW * H / W;
   wrap.style.width = cssW + "px"; wrap.style.height = cssH + "px";
-  wrap.style.transform = "translate(-50%, -50%)" + (rotated ? " rotate(90deg)" : "");
-  $("turn").style.display = rotated ? "block" : "none";
+  wrap.classList.toggle("side", innerWidth - cssW > 12);
   const px = Math.min(W, Math.round(cssW * Math.min(window.devicePixelRatio || 1, parseFloat(query.get("dpr")) || 2.5)));
-  if (Math.abs(px - canvas.width) > 16) {
+  if (changed || Math.abs(px - canvas.width) > 16) {
     canvas.width = px; canvas.height = Math.round(px * H / W);
     K = px / W; curA = 1; curAdd = 0;
-    if (IM.length === D.files.length) rebuild();
+    buildLayers();
+    if (changed) replay(); else { const now = t; t = Math.min(now, T.sketch); update(0); t = now; update(0); }  // 只是清晰度变了：把线稿补画到当前进度
+    draw();
+    if (changed && query.has("auto") && !running) {  // 调试用：?auto&t=60 直接跳到第 60 秒，不放音乐；?pack=tall 指定用哪套
+      start(false);
+      const target = parseFloat(query.get("t")) || 0;
+      while (t < target) update(1 / 30);
+    }
   }
 }
-function rebuild() {  // 画布清晰度变了：预先画好的几层按新尺寸重画，线稿补画到当前进度
-  buildLayers();
-  if (running || t > 0) { const now = t; t = Math.min(now, T.sketch); update(0); t = now; update(0); draw(); }
+function replay() {  // 换了一套排版：粒子的位置都不一样了，从头快速重算到现在的时刻，信开着的话保持开着
+  const now = t, open = letterOpen === null ? null : [t - letterOpen, letterShut === null ? null : t - letterShut];
+  reset();
+  const stop = Math.min(now, T.letter + 5);  // 再往后画面不再变化，直接跳过去
+  while (t < stop) update(1 / 30);
+  if (now > t) { t = now; fw = []; rockets = []; sparks = []; flashes = []; }
+  if (open) { letterOpen = t - open[0]; letterShut = open[1] === null ? null : t - open[1]; }
 }
 
 function toStage(ev) {
-  let px = ev.clientX - innerWidth / 2, py = ev.clientY - innerHeight / 2;
-  if (rotated) [px, py] = [py, -px];
-  return [(px / cssW + 0.5) * W, (py / cssH + 0.5) * H];
+  const box = canvas.getBoundingClientRect();
+  return [(ev.clientX - box.left) / box.width * W, (ev.clientY - box.top) / box.height * H];
 }
 
 function start(withSound) {
@@ -683,26 +738,6 @@ function frame(now) {
   stats.frames++; stats.total += real; stats.worst = Math.max(stats.worst, real);
 }
 
-let loaded = 0, failed = false;
-D.files.forEach((src, i) => {
-  const img = new Image();
-  img.onerror = () => { failed = true; $("go").textContent = "加载失败，请刷新重试"; };
-  img.onload = () => {
-    loaded++;
-    if (failed) return;
-    $("go").textContent = loaded < D.files.length ? `加载中 ${Math.round(loaded / D.files.length * 100)}%` : "点击开始";
-    if (loaded < D.files.length) return;
-    $("go").disabled = false;
-    fit(); rebuild(); draw();
-    if (query.has("auto")) {  // 调试用：?auto&t=60 直接跳到第 60 秒，不放音乐
-      start(false);
-      const target = parseFloat(query.get("t")) || 0;
-      while (t < target) update(1 / 30);
-    }
-  };
-  img.src = src;
-  IM[i] = img;
-});
 fit();
 addEventListener("resize", fit);
 addEventListener("orientationchange", () => setTimeout(fit, 200));
@@ -730,6 +765,6 @@ window.show = {
     ctx.getImageData(0, 0, 1, 1);
     return (performance.now() - a) / n;
   },
-  state: () => ({ t, sparks: sparks.length, tp: tp.length, fw: fw.length, letterOpen, envSince, stage, skDone, K, px: [canvas.width, canvas.height] }),
+  state: () => ({ t, pack: cur, size: [W, H], env: D.env.rect, sparks: sparks.length, tp: tp.length, fw: fw.length, letterOpen, envSince, stage, skDone, K, px: [canvas.width, canvas.height] }),
 };
 })();
