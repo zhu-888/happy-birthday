@@ -123,11 +123,14 @@ function buildLayers() {
 
 // ---------- 状态 ----------
 let t = 0, sparks = [], tp = [], fw = [], rockets = [], pops = [], flashes = [];
-let stage = -1, nextRocket = 0, letterOpen = null, letterShut = null, envSince = 0, skDone = 0;
+let stage = -1, nextRocket = 0, letterOpen = null, letterShut = null, envSince = Infinity, skDone = 0;
+let blowAt = null, popped = false, letterPop = false;  // 蜡烛被吹灭的时刻；信有没有自己弹出来过；这次打开的信是不是从烛芯弹出来的
 
 function reset() {
   t = 0; sparks = []; tp = []; fw = []; rockets = []; pops = []; flashes = [];
-  stage = -1; nextRocket = 0; letterOpen = letterShut = null; envSince = T.letter;
+  stage = -1; nextRocket = 0; letterOpen = letterShut = null;
+  envSince = Infinity;  // 小信封要等信弹出来看完、收起之后才摆到蛋糕前面
+  blowAt = null; popped = letterPop = false;
   skDone = 0; textStill = null;
   skG.clearRect(0, 0, SK.size[0], SK.size[1]);
 }
@@ -144,13 +147,22 @@ function matchPos() {  // 点火的那颗火星：从罩子右上方沿一道弧
   return [D.fx + 300 * cu * (1 - e), D.fy - 8 * cu - 190 * cu * (1 - e) - 60 * cu * Math.sin(Math.PI * p)];
 }
 
-function click(x, y) {  // 点信封：打开信，展开后再点一下收起。点别处：撒一把星星，冒出一条祝福语
-  const [rx, ry, rw, rh] = D.env.rect;
+function blow() {  // 把蜡烛吹灭（提示出现之后才算数）
+  if (blowAt !== null || t < T.letter) return;
+  blowAt = t;
+  for (let i = 0; i < 16; i++)  // 火星被吹得往一边飞
+    sparks.push([D.fx, D.fy + 2 * cu, rnd(60, 280) * u, rnd(-130, 30) * u, 0, rnd(0.3, 0.7), SETS.specks[pickOne([1, 2])][pickOne(D.warm)]]);
+}
+
+function click(x, y) {  // 点信封：打开信，展开后再点一下收起。等着吹蜡烛时点蜡烛或提示：吹灭。点别处：撒一把星星，冒出一条祝福语
+  const inside = ([rx, ry, rw, rh]) => x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
   if (letterOpen !== null) {
     if (letterShut === null && t - letterOpen > T.letterReady) letterShut = t;
-  } else if (t > envSince && x >= rx && x <= rx + rw && y >= ry && y <= ry + rh) {
-    letterOpen = t;
+  } else if (t > envSince && inside(D.env.rect)) {
+    letterOpen = t; letterPop = false;
     burst(x, y, 30, 380 * u);
+  } else if (blowAt === null && t >= T.letter && (inside(D.blow.rect) || inside(D.blow.tipRect))) {
+    blow();
   } else {
     burst(x, y, 46, 420 * u);
     pops.push([pickOne(D.pops), x, y, t]);
@@ -253,6 +265,11 @@ function update(dt) {
   sparks = sparks.filter(s => s[4] < s[5]);
   pops = pops.filter(p => t - p[3] < 2.6);
   flashes = flashes.filter(p => t - p[2] < 0.3);
+  if (blowAt === null && t >= T.letter + D.blowWait) blow();  // 等了很久没人吹，自己灭
+  if (blowAt !== null && !popped && t >= blowAt + D.letterAfter && letterOpen === null) {
+    popped = letterPop = true;  // 蜡烛灭了：信封从烛芯那里弹出来，自己打开
+    letterOpen = t;
+  }
   if (letterShut !== null && t - letterShut > 0.6) {  // 信收好了，小信封回到蛋糕前面
     letterOpen = letterShut = null;
     envSince = t;
@@ -337,6 +354,10 @@ function draw() {
   }
   if (t > T.wishes) drawFriends();
   if (t > envSince && letterOpen === null) drawEnvelope();
+  if (t > T.letter && (blowAt === null || t < blowAt + 0.3)) {  // 吹蜡烛的提示：淡入，轻轻上下浮，吹灭后马上淡出
+    const tip = D.blow.tips[!canListen() ? 2 : t - T.letter > 9 ? 1 : 0];  // 听不了麦克风就让人点蜡烛；吹了一阵没灭也提醒可以点
+    mid(tip, D.blow.pos[0], D.blow.pos[1] + Math.sin(t * 3.1) * 3 * u, clamp01((t - T.letter) / 0.6) * (blowAt === null ? 1 : 1 - (t - blowAt) / 0.3));
+  }
   for (const [spr, x, y, born] of pops) {  // 点出来的祝福语往上飘着淡出
     const age = t - born;
     mid(spr, x, y - 30 * u - age * 34 * u, Math.min(1, age / 0.25, (2.6 - age) / 0.8));
@@ -375,13 +396,29 @@ function drawFlame(img, glow, x, y, ph, grow) {
   tdraw(img, x - d * Math.sin(rad), y - d * Math.cos(rad), 1, grow * (2 - fl), grow * fl, ang);
 }
 
-function drawCandleFlame(grow) {
+function drawBlown(age) {
+  // 蜡烛被吹灭：火苗被吹得歪向一边、越缩越小；灭了以后烛芯还红一小会儿，一缕烟弯弯曲曲地升上去、散开
+  const B = D.blow;
+  if (age < D.blowOut) drawCandleFlame(1 - smooth(age / D.blowOut), age / D.blowOut);
+  glowAt(B.ember, D.fx + 1.5 * cu, D.fy + 3 * cu, clamp01(age / 0.2) * clamp01(1 - (age - 0.3) / 1.6));
+  for (let i = 0; i < 22; i++) {  // 一团团烟接连冒出来，连成一缕：往上升、左右弯、往旁边飘、变大、变淡
+    const a = age - 0.1 - i * 0.12;
+    if (a <= 0 || a >= 2.4) continue;
+    const p = a / 2.4, size = B.smokeMax * (0.2 + 0.1 * Math.min(8, Math.floor(p * 9)));
+    blitS(B.smoke, D.fx + (Math.sin(a * 2.6 + i * 0.5) * 13 + 22 * p) * p * cu - size / 2,
+          D.fy + 2 * cu - 190 * cu * (1 - (1 - p) ** 1.8) - size / 2, size, size, 150 / 255 * Math.min(1, a / 0.2) * (1 - p) ** 1.3);
+  }
+}
+
+function drawCandleFlame(grow, push = 0) {
   // 蛋糕上的火苗：整张图先忽长忽短地拉伸，再切成一条条横条，越靠上的横条左右摆得越多，还有一道波从下往上传，
   // 看起来就是软的、会扭动的火，不是一张硬片在摇
   if (grow <= 0.01) return;
   const s = SP[D.flame], fl = 1 + 0.07 * Math.sin(t * 9.7) + 0.04 * Math.sin(t * 21.3 + 1.0);
-  const w = s[3] * grow * (2 - fl), h = s[4] * grow * fl, lean = 3.2 * Math.sin(t * 2.3 + 0.7) + 1.6 * Math.sin(t * 5.9);
-  if (grow > 0.5) glowAt(D.flameGlow, D.fx, D.fy - h * 0.26, 1);
+  const w = s[3] * grow * (2 - fl), h = s[4] * grow * fl;
+  const lean = 3.2 * Math.sin(t * 2.3 + 0.7) + 1.6 * Math.sin(t * 5.9) + 34 * push;  // 火尖往一边偏多少；push 是被吹的力度
+  if (push > 0) glowAt(D.flameGlow, D.fx, D.fy - h * 0.26, (1 - push) ** 2);
+  else if (grow > 0.5) glowAt(D.flameGlow, D.fx, D.fy - h * 0.26, 1);
   setAdd(0); setA(1);
   ctx.setTransform(1, 0, 0, 1, 0, 0);  // 直接按画布像素画，横条的上下边落在整数行上，条与条之间才没有缝
   const n = D.flameStrips, left = (D.fx - w / 2) * K, topPx = Math.round((D.fy + D.flameDrop * cu - h) * K), rows = Math.max(n, Math.round(h * K));
@@ -526,7 +563,8 @@ function drawCake() {
 
   if (t > T.flame) {
     if (t < T.flame + 0.3) glowAt(D.flameGlow, D.fx, D.fy, 1);  // 点着的一瞬间多闪一下
-    drawCandleFlame(outBack(clamp01((t - T.flame) / 0.4)));
+    if (blowAt === null) drawCandleFlame(outBack(clamp01((t - T.flame) / 0.4)));
+    else drawBlown(t - blowAt);
   } else if (t > T.flame - T.match) {
     const [mx, my] = matchPos();
     glowAt(D.matchGlow, mx, my, 1);
@@ -571,9 +609,9 @@ function drawLetter() {
   setAdd(0); setA(175 / 255 * clamp01(e / 0.6) * (1 - away));
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
-  const [x0, y0] = E.pos, x1 = W / 2, y1 = H * 0.62;
-  if (e < 0.6) {  // 信封从蛋糕前面飞到屏幕中间，边飞边变大
-    const p = smooth(e / 0.6), sc = D.envSmall + (1 - D.envSmall) * p;
+  const [x0, y0] = letterPop ? [D.fx, D.fy - 10 * cu] : E.pos, x1 = W / 2, y1 = H * 0.62, tiny = letterPop ? D.popSmall : D.envSmall;
+  if (e < 0.6) {  // 信封从蛋糕前面（或者从刚吹灭的烛芯那里）飞到屏幕中间，边飞边变大
+    const p = smooth(e / 0.6), sc = tiny + (1 - tiny) * p;
     tdraw(E.whole, x0 + (x1 - x0) * p, y0 + (y1 - y0) * p, 1, sc, sc, -8 * (1 - p));
     return;
   }
@@ -660,10 +698,57 @@ function stopMusic() {
   if (master) { master.disconnect(); master = null; }
 }
 
+// ---------- 吹蜡烛：用麦克风听有没有人对着屏幕吹气 ----------
+// 声音只在这台设备上当场分析响度，不录音、不保存、不上传。不给麦克风权限或者浏览器不支持时，改成点一下蜡烛。
+let mic = null, micOff = false;  // mic：正在用的麦克风；micOff：这次打开页面已经确定用不了，不再去要
+const canListen = () => !micOff && !!audio && !!navigator.mediaDevices && !!navigator.mediaDevices.getUserMedia;
+
+function micStart() {
+  if (!canListen()) { micOff = true; return; }
+  const mine = mic = { state: "ask", hot: 0, base: null, age: 0 };
+  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(stream => {
+    if (mic !== mine) { stream.getTracks().forEach(track => track.stop()); return; }  // 等权限的工夫已经不用听了
+    mine.stream = stream;
+    mine.src = audio.createMediaStreamSource(stream);
+    mine.an = audio.createAnalyser();
+    mine.an.fftSize = 1024; mine.an.smoothingTimeConstant = 0.3; mine.an.minDecibels = -90; mine.an.maxDecibels = -20;
+    mine.src.connect(mine.an);  // 只接到分析器，不接到喇叭，不会把声音放出来
+    mine.buf = new Uint8Array(mine.an.frequencyBinCount);
+    mine.state = "on";
+    audio.resume();  // 有的手机一开麦克风会把正在放的音乐停掉
+  }).catch(() => { micOff = true; if (mic === mine) mic = null; });
+}
+function micStop() {
+  if (!mic) return;
+  if (mic.stream) mic.stream.getTracks().forEach(track => track.stop());
+  if (mic.src) mic.src.disconnect();
+  mic = null;
+}
+function blowing(m, buf, hz, dt) {
+  // 吹气打在话筒上是一片低沉的呼呼声：三百赫兹以下很响，而且比中高频响得多，还要持续一小会儿。
+  // 背景音乐是八音盒音色，都在七百赫兹以上，不会被当成吹气。buf 是各频率的响度（0-255），hz 是每一格多少赫兹。
+  const band = (lo, hi) => { let sum = 0, n = 0; for (let i = Math.max(1, Math.round(lo / hz)); i <= Math.round(hi / hz); i++) { sum += buf[i]; n++; } return sum / n; };
+  const low = band(50, 320), high = band(700, 3000);
+  m.age += dt;
+  if (m.base === null) m.base = low;
+  const loud = m.age > 0.4 && low > Math.max(135, m.base + 45) && low > high + 18;
+  if (!loud) m.base += (low - m.base) * Math.min(1, dt * 1.5);  // 平时的底噪，慢慢跟着变
+  m.hot = loud ? m.hot + dt : Math.max(0, m.hot - dt * 2);
+  return m.hot > 0.18;
+}
+function listen(dt) {  // 每帧调一次：等着吹蜡烛的时候打开麦克风听，听到吹气就把蜡烛吹灭；不用听了就关掉麦克风
+  if (!(running && blowAt === null && t >= T.letter)) { micStop(); return; }
+  if (!mic) { if (!micOff) micStart(); return; }
+  if (mic.state !== "on") return;
+  mic.an.getByteFrequencyData(mic.buf);
+  if (blowing(mic, mic.buf, audio.sampleRate / mic.an.fftSize, dt)) blow();
+}
+
 // ---------- 页面：横竖屏、缩放、点击、开始和重播 ----------
 let cur = null, cssW = 1, cssH = 1, running = false, last = 0, failed = false;
 const speed = parseFloat(query.get("speed")) || 1;
 const stats = { frames: 0, total: 0, worst: 0 };
+const BUILD = "e739bbde";  // 数据文件的指纹，由导出脚本填：数据一变地址就变，浏览器不会拿缓存里的旧数据配新脚本
 const PACKS = { wide: { src: "data.js" }, tall: { src: "data_tall.js" } };
 for (const name in PACKS) Object.assign(PACKS[name], { data: null, images: [], state: 0, progress: 0 });  // state：0 没加载，1 加载中，2 好了
 const wanted = () => query.get("pack") in PACKS ? query.get("pack") : innerHeight > innerWidth ? "tall" : "wide";  // 竖着拿用竖屏那套
@@ -674,7 +759,7 @@ function load(name) {  // 先取这一套的数据，再取它用到的图片；
   pack.state = 1;
   const fail = () => { failed = true; showProgress(); };
   const tag = document.createElement("script");
-  tag.src = pack.src;
+  tag.src = pack.src + "?v=" + BUILD;
   tag.onerror = fail;
   tag.onload = () => {
     pack.data = window.PACKS_DATA[name];
@@ -728,12 +813,14 @@ function fit() {  // 按手机横着还是竖着选一套排版，再把舞台�
   }
 }
 function replay() {  // 换了一套排版：粒子的位置都不一样了，从头快速重算到现在的时刻，信开着的话保持开着
-  const now = t, open = letterOpen === null ? null : [t - letterOpen, letterShut === null ? null : t - letterShut];
+  const now = t, ago = at => at === null ? null : now - at, back = d => d === null ? null : t - d;
+  const was = { open: ago(letterOpen), shut: ago(letterShut), blow: ago(blowAt), env: now - envSince, popped, letterPop };
   reset();
-  const stop = Math.min(now, T.letter + 5);  // 再往后画面不再变化，直接跳过去
+  const stop = Math.min(now, T.letter);  // 再往后只剩烟花在放，直接跳过去
   while (t < stop) update(1 / 30);
   if (now > t) { t = now; fw = []; rockets = []; sparks = []; flashes = []; }
-  if (open) { letterOpen = t - open[0]; letterShut = open[1] === null ? null : t - open[1]; }
+  letterOpen = back(was.open); letterShut = back(was.shut); blowAt = back(was.blow); envSince = t - was.env;
+  popped = was.popped; letterPop = was.letterPop;
 }
 
 function toStage(ev) {
@@ -755,6 +842,7 @@ function frame(now) {
   const real = (now - last) / 1000;
   last = now;
   update(Math.min(real, 0.05) * speed);
+  listen(Math.min(real, 0.05));
   draw();
   stats.frames++; stats.total += real; stats.worst = Math.max(stats.worst, real);
 }
@@ -778,7 +866,12 @@ requestAnimationFrame(frame);
 
 // 调试和测试用
 window.show = {
-  get t() { return t; }, stats, click, reset,
+  get t() { return t; }, stats, click, reset, blow,
+  hear(spectra, hz = 46.875, dt = 1 / 60) {  // 测试用：把一串频谱喂给吹气识别，返回第几帧判定为吹气（没判定返回 -1）
+    const m = { hot: 0, base: null, age: 0 };
+    for (let i = 0; i < spectra.length; i++) if (blowing(m, spectra[i], hz, dt)) return i;
+    return -1;
+  },
   seek(to) { if (to < t) reset(); while (t < to) update(1 / 30); draw(); },
   bench(n = 60) {  // 连续画 n 帧，返回每帧平均毫秒数（读一个像素强制把绘制做完）
     const a = performance.now();
@@ -786,6 +879,6 @@ window.show = {
     ctx.getImageData(0, 0, 1, 1);
     return (performance.now() - a) / n;
   },
-  state: () => ({ t, pack: cur, size: [W, H], env: D.env.rect, sparks: sparks.length, tp: tp.length, fw: fw.length, letterOpen, envSince, stage, skDone, K, px: [canvas.width, canvas.height] }),
+  state: () => ({ t, pack: cur, size: [W, H], env: D.env.rect, blowAt, popped, letterPop, mic: micOff ? "off" : mic ? mic.state : "idle", sparks: sparks.length, tp: tp.length, fw: fw.length, letterOpen, envSince, stage, skDone, K, px: [canvas.width, canvas.height] }),
 };
 })();
