@@ -157,7 +157,7 @@ function blow() {  // 把蜡烛吹灭（提示出现之后才算数）
 function click(x, y) {  // 点信封：打开信，展开后再点一下收起。等着吹蜡烛时点蜡烛或提示：吹灭。点别处：撒一把星星，冒出一条祝福语
   const inside = ([rx, ry, rw, rh]) => x >= rx && x <= rx + rw && y >= ry && y <= ry + rh;
   if (letterOpen !== null) {
-    if (letterShut === null && t - letterOpen > T.letterReady) letterShut = t;
+    if (letterShut === null && t - letterOpen > T.letterReady) { letterShut = t; letterPop = false; }  // 收好以后信封飞回蛋糕前面
   } else if (t > envSince && inside(D.env.rect)) {
     letterOpen = t; letterPop = false;
     burst(x, y, 30, 380 * u);
@@ -270,7 +270,7 @@ function update(dt) {
     popped = letterPop = true;  // 蜡烛灭了：信封从烛芯那里弹出来，自己打开
     letterOpen = t;
   }
-  if (letterShut !== null && t - letterShut > 0.6) {  // 信收好了，小信封回到蛋糕前面
+  if (letterShut !== null && t - letterShut > T.closeTime) {  // 信收好了，小信封留在蛋糕前面
     letterOpen = letterShut = null;
     envSince = t;
   }
@@ -592,21 +592,18 @@ function drawFriends() {  // 朋友们一排一排（左右各两只）慢慢浮
   });
 }
 
-function drawEnvelope() {  // 蛋糕前面的小信封：蹦出来，轻轻浮动，隔一会儿晃一晃，旁边一行小字提示可以点开
-  const E = D.env, a = t - envSince, x = E.pos[0], y = E.pos[1] + Math.sin(t * 2.3) * 4 * u, wig = a % 3.4;
-  glowAt(E.glow, x, y, clamp01(a / 0.6) * (0.65 + 0.35 * Math.sin(t * 3.1)));
-  const sc = D.envSmall * (a < 0.5 ? outBack(clamp01(a / 0.5), 2.4) : 1);
-  tdraw(E.whole, x, y, 1, sc, sc, -8 + (a >= 0.5 && wig < 0.6 ? Math.sin(wig * 21) * 7 * (0.6 - wig) / 0.6 : 0));
-  if (a > 0.7) {  // 提示在横屏时摆在信封下面，竖屏时摆在右边，朝那个方向轻轻晃
-    const bob = Math.abs(Math.sin(t * 3.1)) * 5 * u;
-    blit(E.tip, x + E.tipOff[0] + E.tipDir[0] * bob, y + E.tipOff[1] + E.tipDir[1] * bob, clamp01((a - 0.7) / 0.5));
-  }
+function drawEnvelope() {  // 信看完收好以后，小信封安静地放在蛋糕前面：轻轻浮动，带一点光，想再看可以点开
+  const E = D.env, a = t - envSince, x = E.pos[0], y = E.pos[1] + Math.sin(t * 2.3) * 3 * u * clamp01(a);  // 刚飞回来时是停稳的，再慢慢浮起来
+  glowAt(E.glow, x, y, clamp01(a / 0.8) * (0.5 + 0.2 * Math.sin(t * 2.1)));
+  tdraw(E.whole, x, y, 1, D.envSmall, D.envSmall, -8);
 }
 
 function drawLetter() {
-  // 点开信封后：画面暗下来，信封飞到中间、封盖打开，折着的信纸升出来飞到屏幕中央，上下两折依次展开，文字逐行浮现
-  const E = D.env, e = t - letterOpen, away = letterShut !== null ? clamp01((t - letterShut) / 0.6) : 0;
-  setAdd(0); setA(175 / 255 * clamp01(e / 0.6) * (1 - away));
+  // 点开信封后：画面暗下来，信封飞到中间、封盖打开，折着的信纸升出来飞到屏幕中央，上下两折依次展开，文字逐行浮现。
+  // 收起来时：字先淡出，然后把上面的过程倒着放一遍，最后信封飞回蛋糕前面
+  const E = D.env, shut = letterShut === null ? null : t - letterShut;
+  const e = shut === null ? t - letterOpen : Math.max(0, T.unfolded - Math.max(0, shut - T.textOut) * T.closeSpeed);
+  setAdd(0); setA(175 / 255 * clamp01(e / 0.6));
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, W, H);
   const [x0, y0] = letterPop ? [D.fx, D.fy - 10 * cu] : E.pos, x1 = W / 2, y1 = H * 0.62, tiny = letterPop ? D.popSmall : D.envSmall;
@@ -628,7 +625,7 @@ function drawLetter() {
     blit(E.front, ox, oy);
     if (q <= 0.5) blitS(E.lid, ox, hinge, SP[E.lid][3], SP[E.lid][4] * (1 - q * 2));
   }
-  const cx = W / 2, cy = H / 2 + away * away * H;  // 收起时整张信纸往下滑出画面
+  const cx = W / 2, cy = H / 2;
   if (fly > 0 && fly < 1) {  // 折着的信纸飞到屏幕中央，同时放大
     const sc = small + (1 - small) * fly, px = x1 + (cx - x1) * fly, py = lifted + (cy - lifted) * fly;
     blitS(D.packet, px - pw * sc / 2, py - third * sc / 2, pw * sc, third * sc);
@@ -636,8 +633,9 @@ function drawLetter() {
     const up = smooth(clamp01((e - 3.3) / 0.9)), down = smooth(clamp01((e - 4.0) / 0.9)), left = cx - pw / 2, top = cy - ph / 2;
     if (down === 1) {
       blit(D.paper, left, top);
-      D.lines.forEach(([spr, x, y], i) => blit(spr, left + x, top + y, clamp01((e - T.letterReady - 0.32 * i) / 0.7)));
-      if (away === 0 && e > T.letterReady + 1) {
+      const read = shut === null ? e : letterShut - letterOpen, fade = shut === null ? 1 : 1 - shut / T.textOut;  // 字浮现到哪儿了；收的时候从那里一起淡出
+      D.lines.forEach(([spr, x, y], i) => blit(spr, left + x, top + y, clamp01((read - T.letterReady - 0.32 * i) / 0.7) * fade));
+      if (shut === null && e > T.letterReady + 1) {
         const tip = E.closeTip;
         blit(tip, W / 2 - SP[tip][3] / 2, H - 10 * u - SP[tip][4], 150 / 255 * clamp01(e - T.letterReady - 1));
       }
@@ -748,7 +746,7 @@ function listen(dt) {  // 每帧调一次：等着吹蜡烛的时候打开麦克
 let cur = null, cssW = 1, cssH = 1, running = false, last = 0, failed = false;
 const speed = parseFloat(query.get("speed")) || 1;
 const stats = { frames: 0, total: 0, worst: 0 };
-const BUILD = "e739bbde";  // 数据文件的指纹，由导出脚本填：数据一变地址就变，浏览器不会拿缓存里的旧数据配新脚本
+const BUILD = "dee52688";  // 数据文件的指纹，由导出脚本填：数据一变地址就变，浏览器不会拿缓存里的旧数据配新脚本
 const PACKS = { wide: { src: "data.js" }, tall: { src: "data_tall.js" } };
 for (const name in PACKS) Object.assign(PACKS[name], { data: null, images: [], state: 0, progress: 0 });  // state：0 没加载，1 加载中，2 好了
 const wanted = () => query.get("pack") in PACKS ? query.get("pack") : innerHeight > innerWidth ? "tall" : "wide";  // 竖着拿用竖屏那套
