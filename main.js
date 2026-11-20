@@ -298,10 +298,10 @@ function draw() {
   if (D.hosts.length && t >= T.host && t < T.count) drawHosts();
   if (t >= T.count && t < T.count + 3 * T.countStep) drawCountdown();
   if (t >= T.balloon && t < T.balloon + 6) {
-    for (const [i, x, y0, v, ph] of D.balloons) {
-      const spr = D.balloonImg[i % 4], sc = [0.8, 1, 1.25][i >> 2], w = SP[spr][3] * sc, h = SP[spr][4] * sc;
+    for (const [i, x, y0, v, ph] of D.balloons) {  // 八款气球各有三种大小；一边往上飘一边左右晃，往哪边晃就往哪边歪
+      const spr = D.balloonImg[i % 8], sc = [0.8, 1, 1.25][i >> 3], h = SP[spr][4] * sc;
       const y = y0 - v * (t - T.balloon);
-      if (y > -h && y < H) blitS(spr, x - w / 2 + Math.sin(t * 1.4 + ph) * 12 * u, y, w, h);
+      if (y > -h && y < H) tdraw(spr, x + Math.sin(t * 1.4 + ph) * 12 * u, y + h / 2, 1, sc, sc, -5 * Math.cos(t * 1.4 + ph));
     }
   }
   if (t >= T.sketch && t < T.galaxy + 0.7) drawSketch();
@@ -496,12 +496,15 @@ function drawCake() {
       if (z > 0.25) ctx.drawImage(IM[s[0]], s[1] + i * sw, s[2], sw, s[4], dx + R * cos(rot + off), dy - labelY + R * z * TILT, sw, s[4]);
     }
   }
-  const top = dy - D.HC;
-  for (const [r, th0, lift, spr, sp, ph, delay, x0, y0] of D.top) {  // 顶面的闪粉
+  const top = dy - D.HC, ahead = [];
+  for (const [r, th0, lift, spr, sp, ph, delay, x0, y0] of D.top) {  // 顶面的闪粉：转到蜡烛后面的先画，蜡烛插在中间，转到前面的最后画
     if (a <= delay) continue;
-    arrive(dx + r * cos(th0 + rot), top - lift + r * sin(th0 + rot) * TILT, delay, x0, y0);
-    dot(spr, ax, ay, level(sin(t * sp + ph)));
+    const z = sin(th0 + rot);
+    arrive(dx + r * cos(th0 + rot), top - lift + r * z * TILT, delay, x0, y0);
+    if (z > 0) ahead.push([spr, ax, ay, level(sin(t * sp + ph))]); else dot(spr, ax, ay, level(sin(t * sp + ph)));
   }
+  blit(D.candle[0], D.candle[1], D.candle[2], clamp01((a - 0.6) / 2.0));
+  for (const p of ahead) dot(p[0], p[1], p[2], p[3]);
 
   if (t > T.flame) {
     if (t < T.flame + 0.3) glowAt(D.flameGlow, D.fx, D.fy, 1);  // 点着的一瞬间多闪一下
@@ -525,8 +528,8 @@ function drawFriends() {  // 朋友们一排一排（左右各两只）慢慢浮
   D.friends.forEach(([spr, x, y, bubble, ph], i) => {
     const a = t - T.wishes - Math.floor(i / 4) * T.friendGap;
     if (a <= 0) return;
-    const w = SP[spr][3], h = SP[spr][4], show = smooth(clamp01(a / 0.9)), say = smooth(clamp01((a - 0.7) / 1.0));
-    const hop = Math.abs(Math.sin(t * 2.2 + ph)) * 7 * u * clamp01(a - 0.9);
+    const w = SP[spr][3], h = SP[spr][4], show = smooth(clamp01(a / 1.6)), say = smooth(clamp01((a - 1.1) / 1.3));
+    const hop = Math.abs(Math.sin(t * 2.2 + ph)) * 7 * u * clamp01(a - 1.6);
     blit(spr, x - w / 2, y - h - hop + (1 - show) * 18 * u, show);
     if (say > 0)
       blit(bubble, x - SP[bubble][3] / 2, y - h + 3 * u - hop * 0.5 + Math.sin(t * 1.7 + ph) * 2 * u + (1 - say) * 10 * u - SP[bubble][4], say);
